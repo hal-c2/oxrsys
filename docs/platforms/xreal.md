@@ -28,7 +28,7 @@ The streaming server is not started in this mode.
 - Frame pacing follows the target screen's refresh rate (120 Hz mirrored/2D, 60 Hz in side-by-side mode on the One Pro).
 - Recommended per-eye size and FOV default to the One Pro panels and optics: 1920x1080, 50.6 x 29.8 degrees.
 - Head tracking: the IMU (1 kHz) is fused with a complementary filter; gyro bias is learned while the head is still. Yaw starts at zero and `LOCAL` space is anchored at the first tracked pose. Position is fixed (3DoF).
-- Yaw drift: the glasses also send magnetometer packets (400 Hz, a separate packet kind whose gyro and accelerometer are NaN). Yaw is pulled gently toward the magnetic heading it had at start, ignoring readings whose strength says a magnet is near. The glasses' own hard-iron offset (several times Earth's field) starts from a One Pro measurement and is refined by least squares while the head turns: over each short turn a fixed world field must rotate exactly as the gyro says.
+- Yaw drift: yaw slowly drifts with the gyro, a few degrees a minute; apps offer a recenter. The glasses also send magnetometer packets (400 Hz, a separate packet kind whose gyro and accelerometer are NaN), and `xreal_magnetometer` pulls yaw toward the magnetic heading it had at start, refining the glasses' hard-iron offset (several times Earth's field) by least squares over short gyro-measured turns. It is off by default: on a desk next to a laptop, with a 65 degree field dip leaving about 25 uT horizontal, the heading at the same resting pose moved 5-10 degrees after handling (the offset estimate and the local field both shifted by about 2.5 uT), which made the view worse than gyro drift over a minute (glasses put back on the same spot: 8.1 degrees off with it, 3.6 without).
 - Timewarp: before presenting, each eye is re-projected by the rotation between the render pose and the newest predicted IMU pose.
 
 ## Configuration
@@ -46,7 +46,7 @@ The streaming server is not started in this mode.
 | `local_display_warp_prediction_ms` | `8` | Pose prediction at present time |
 | `xreal_imu_address` | `"169.254.2.1:52998"` | IMU TCP endpoint |
 | `xreal_imu_pitch_offset_deg` | `0` | Horizon fine-tuning; positive lowers the view |
-| `xreal_magnetometer` | `true` | Hold yaw to the magnetic heading at start (no sideways drift) |
+| `xreal_magnetometer` | `false` | Hold yaw to the magnetic heading at start; see Yaw drift |
 | `xreal_magnetometer_offset` | `""` | Starting hard-iron offset `"x, y, z"` (uT, magnetometer axes); empty uses the One Pro's |
 
 ## IMU Calibration

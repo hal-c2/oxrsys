@@ -59,7 +59,7 @@ struct ConfigValues
     float localDisplayWarpPredictionMs = 8.0f;    // head pose prediction at present time
     std::string xrealImuAddress = "169.254.2.1:52998";
     float xrealImuPitchOffsetDeg = 0.0f;
-    bool xrealMagnetometer = true;
+    bool xrealMagnetometer = false;
     std::string xrealMagnetometerOffset; // "x, y, z" uT in the magnetometer's axes; empty = One Pro default
 
     bool fileLogging = true;        // Write logs to oxrsys-runtime.log

@@ -44,7 +44,8 @@ public:
         // Fine-tunes the IMU-to-display pitch on top of the built-in
         // calibration; positive values lower the rendered view.
         float pitchOffsetDeg = 0.0f;
-        bool magnetometer = true;
+        // Off by default: see docs/platforms/xreal.md (Yaw drift).
+        bool magnetometer = false;
         // Starting hard-iron offset in the magnetometer's own axes (uT),
         // measured on an XREAL One Pro; refined while the head turns.
         glm::vec3 magnetometerOffset = {-152.4f, 125.4f, -87.3f};

@@ -198,6 +198,7 @@ glm::quat LookingAround(double t)
 XrealImu::Options NoHardIron()
 {
     XrealImu::Options options;
+    options.magnetometer = true;
     options.magnetometerOffset = {};
     return options;
 }
