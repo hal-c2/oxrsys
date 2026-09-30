@@ -40,6 +40,7 @@ The streaming server is not started in this mode.
 | `local_display_fov_h_deg` / `_v_deg` | `50.6` / `29.8` | Symmetric per-eye FOV |
 | `local_display_ipd_mm` | `63.0` | Eye separation |
 | `local_display_timewarp` | `true` | Present-time rotational reprojection |
+| `local_display_gamma_encoded_sources` | `true` | sRGB swapchains hold display-ready values (Qt Quick 3D XR); turn off if an engine's colors look too dark |
 | `local_display_render_prediction_ms` | `16` | Pose prediction for `xrLocateViews` |
 | `local_display_warp_prediction_ms` | `8` | Pose prediction at present time |
 | `xreal_imu_address` | `"169.254.2.1:52998"` | IMU TCP endpoint |

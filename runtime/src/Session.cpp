@@ -1086,6 +1086,7 @@ void Session::StartLocalDisplayIfNeeded()
     LocalDisplay::Settings settings;
     settings.screenName = config.localDisplayScreen;
     settings.timewarp = config.localDisplayTimewarp;
+    settings.gammaEncodedSources = config.localDisplayGammaEncodedSources;
     localDisplay_ = std::make_unique<LocalDisplay>(graphicsContext_.metalDevice, settings);
     localWarpPredictionSeconds_ = config.localDisplayWarpPredictionMs * 0.001f;
 

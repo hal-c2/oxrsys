@@ -101,6 +101,11 @@ local_display_ipd_mm = 63.0
 # Rotation-only reprojection at present time using the newest IMU pose.
 local_display_timewarp = true
 
+# Treat sRGB swapchain contents as already gamma-encoded, as Qt Quick 3D XR
+# writes them. Turn off for engines that write linear values into sRGB
+# swapchains if their colors look too dark.
+local_display_gamma_encoded_sources = true
+
 # Head pose prediction (milliseconds) for rendering and for the present-time warp.
 local_display_render_prediction_ms = 16
 local_display_warp_prediction_ms = 8

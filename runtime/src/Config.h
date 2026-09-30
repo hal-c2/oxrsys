@@ -54,6 +54,7 @@ struct ConfigValues
     float localDisplayFovVerticalDeg = 29.8f;
     float localDisplayIpdMm = 63.0f;
     bool localDisplayTimewarp = true;
+    bool localDisplayGammaEncodedSources = true;
     float localDisplayRenderPredictionMs = 16.0f; // head pose prediction for rendering
     float localDisplayWarpPredictionMs = 8.0f;    // head pose prediction at present time
     std::string xrealImuAddress = "169.254.2.1:52998";

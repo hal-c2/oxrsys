@@ -293,11 +293,13 @@ void LocalDisplay::Present(FrameSource&& frame, const XrFovf fov[2],
         id<MTLTexture> left = (id<MTLTexture>)frame.left.GetImage();
         id<MTLTexture> right = (id<MTLTexture>)frame.right.GetImage();
 
-        // Match the drawable's encoding to the swapchain's so sRGB content is not
-        // double-encoded (sampling an sRGB texture yields linear values).
+        // Sampling an sRGB texture decodes it. For linear content an sRGB drawable
+        // encodes it back; for already gamma-encoded content (see Settings) a
+        // plain drawable keeps the decode, undoing the swapchain's encoding.
         const bool srgb = left.pixelFormat == MTLPixelFormatRGBA8Unorm_sRGB ||
                           left.pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
-        const MTLPixelFormat format = srgb ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatBGRA8Unorm;
+        const MTLPixelFormat format = srgb && !impl_->settings.gammaEncodedSources
+            ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatBGRA8Unorm;
         if (metalLayer.pixelFormat != format)
         {
             spdlog::info("LocalDisplay: eye texture format {} ({}x{}, type {}), drawable format {}",

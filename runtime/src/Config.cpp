@@ -389,6 +389,10 @@ ConfigValues ParseConfigToml(std::istream& input, const ConfigValues& defaults)
                     values.localDisplayIpdMm = val;
                 }
             }
+            else if (key == "local_display_gamma_encoded_sources")
+            {
+                values.localDisplayGammaEncodedSources = ParseBool(value);
+            }
             else if (key == "local_display_timewarp")
             {
                 values.localDisplayTimewarp = ParseBool(value);

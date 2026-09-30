@@ -23,6 +23,10 @@ public:
     {
         std::string screenName = "XREAL";
         bool timewarp = true;
+        // Treat sRGB swapchain contents as already gamma-encoded. Qt Quick 3D XR
+        // writes display-ready values into the sRGB swapchain it picks, which a
+        // spec-following present would encode a second time (washed-out colors).
+        bool gammaEncodedSources = true;
     };
 
     LocalDisplay(void* metalDevice, const Settings& settings);
