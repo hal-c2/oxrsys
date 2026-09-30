@@ -6,6 +6,7 @@
 #include "XrealImu.h"
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -35,7 +36,11 @@ void Feed(XrealImu& imu, uint64_t& timestampUs, float seconds, glm::vec3 gyro, g
     for (int i = 0; i < count; ++i)
     {
         timestampUs += 1000;
-        imu.Integrate({timestampUs, gyro, accel});
+        XrealImu::Sample sample;
+        sample.timestampUs = timestampUs;
+        sample.gyro = gyro;
+        sample.accel = accel;
+        imu.Integrate(sample);
     }
 }
 
@@ -132,4 +137,117 @@ TEST_CASE("XrealImu learns gyro bias while still so yaw does not drift", "[xreal
     const glm::vec3 forward = Forward(imu.GetOrientation());
     const float yaw = std::atan2(-forward.x, -forward.z);
     CHECK(std::abs(yaw) < glm::radians(1.0f));
+}
+
+namespace
+{
+
+float Yaw(const glm::quat& q)
+{
+    const glm::vec3 forward = Forward(q);
+    return std::atan2(-forward.x, -forward.z);
+}
+
+// Feeds `seconds` of a head turning as `pose(t)` says: 1 kHz motion samples
+// whose gyro reads `gyroBias` too high, and (with a field) 400 Hz magnetometer
+// samples of `worldField` plus `hardIron`, all in head axes.
+template <typename Pose>
+void FeedMotion(XrealImu& imu, float seconds, Pose pose, glm::vec3 gyroBias,
+                std::optional<glm::vec3> worldField, glm::vec3 hardIron = {})
+{
+    const int steps = static_cast<int>(seconds * 1000.0f);
+    for (int i = 1; i <= steps; ++i)
+    {
+        // The body rate from one pose to the next; atan2 keeps the tiny
+        // per-millisecond angle exact where acos near 1 would round it away.
+        const double t = i * 0.001;
+        const glm::quat q = pose(t);
+        glm::quat delta = glm::inverse(q) * pose(t + 0.001);
+        if (delta.w < 0.0f)
+        {
+            delta = -delta;
+        }
+        const glm::vec3 v(delta.x, delta.y, delta.z);
+        const float s = glm::length(v);
+        const glm::vec3 rate = s > 1e-12f ? v / s * (2.0f * std::atan2(s, delta.w) / 0.001f) : glm::vec3(0.0f);
+
+        XrealImu::Sample motion;
+        motion.timestampUs = static_cast<uint64_t>(i) * 1000;
+        motion.gyro = rate + gyroBias;
+        motion.accel = glm::inverse(q) * glm::vec3(0.0f, kG, 0.0f);
+        imu.Integrate(motion);
+
+        if (worldField && i % 5 == 0 && i % 2 == 0)
+        {
+            XrealImu::Sample magnetometer;
+            magnetometer.kind = XrealImu::Sample::Kind::Magnetometer;
+            magnetometer.timestampUs = motion.timestampUs;
+            magnetometer.magnetometer = glm::inverse(q) * *worldField + hardIron;
+            imu.Integrate(magnetometer);
+        }
+    }
+}
+
+// Looking around: yaw sweeping +-40 degrees, pitch +-20, at different rates.
+glm::quat LookingAround(double t)
+{
+    return glm::angleAxis(static_cast<float>(0.7 * std::sin(0.9 * t)), glm::vec3(0.0f, 1.0f, 0.0f)) *
+           glm::angleAxis(static_cast<float>(0.35 * std::sin(1.7 * t)), glm::vec3(1.0f, 0.0f, 0.0f));
+}
+
+XrealImu::Options NoHardIron()
+{
+    XrealImu::Options options;
+    options.magnetometerOffset = {};
+    return options;
+}
+
+// Earth's field, 50 uT dipping 60 degrees, pointing north (-Z) at start.
+const glm::vec3 kEarthField = glm::vec3(0.0f, -std::sin(glm::radians(60.0f)), -std::cos(glm::radians(60.0f))) * 50.0f;
+
+} // namespace
+
+TEST_CASE("XrealImu parses magnetometer packets and ignores the motion packets' placeholder", "[xreal]")
+{
+    const float nan3[3] = {NAN, NAN, NAN};
+    auto packet = MakePacket(7'000'000, nan3, nan3);
+    packet[30] = 0x04;
+    const float field[3] = {-114.0f, 131.0f, -117.0f};
+    std::memcpy(packet.data() + 58, field, sizeof(field));
+
+    XrealImu::Sample sample;
+    REQUIRE(XrealImu::TryParsePacket(packet.data(), packet.size(), sample));
+    CHECK(sample.kind == XrealImu::Sample::Kind::Magnetometer);
+    CHECK(sample.timestampUs == 7000);
+    CHECK_THAT(glm::length(sample.magnetometer), WithinAbs(std::sqrt(114.0f * 114 + 131 * 131 + 117 * 117), 1e-3));
+
+    const float none[3] = {-3200.0f, -3200.0f, -3200.0f};
+    std::memcpy(packet.data() + 58, none, sizeof(none));
+    CHECK_FALSE(XrealImu::TryParsePacket(packet.data(), packet.size(), sample));
+}
+
+TEST_CASE("XrealImu holds yaw to the magnetic heading when the gyro drifts", "[xreal]")
+{
+    const glm::vec3 bias(0.0f, 0.02f, 0.0f); // 1.1 degrees a second, never still enough to learn
+
+    XrealImu drifting("127.0.0.1:1", NoHardIron());
+    FeedMotion(drifting, 30.0f, LookingAround, bias, std::nullopt);
+    const float drift = std::abs(Yaw(drifting.GetOrientation()) - Yaw(LookingAround(30.001)));
+
+    XrealImu held("127.0.0.1:1", NoHardIron());
+    FeedMotion(held, 30.0f, LookingAround, bias, kEarthField);
+    const float error = std::abs(Yaw(held.GetOrientation()) - Yaw(LookingAround(30.001)));
+
+    CHECK(drift > glm::radians(20.0f));
+    CHECK(error < glm::radians(5.0f));
+}
+
+TEST_CASE("XrealImu learns the glasses' hard-iron offset while the head turns", "[xreal]")
+{
+    const glm::vec3 hardIron(-40.0f, 25.0f, 60.0f);
+    XrealImu imu("127.0.0.1:1", NoHardIron()); // starts assuming none
+    FeedMotion(imu, 40.0f, LookingAround, glm::vec3(0.0f), kEarthField, hardIron);
+
+    const glm::vec3 learned = imu.GetMagnetometerOffset();
+    CHECK(glm::length(learned - hardIron) < 3.0f);
 }

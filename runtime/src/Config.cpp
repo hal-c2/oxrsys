@@ -414,6 +414,14 @@ ConfigValues ParseConfigToml(std::istream& input, const ConfigValues& defaults)
                     values.xrealImuPitchOffsetDeg = val;
                 }
             }
+            else if (key == "xreal_magnetometer")
+            {
+                values.xrealMagnetometer = ParseBool(value);
+            }
+            else if (key == "xreal_magnetometer_offset")
+            {
+                values.xrealMagnetometerOffset = ParseString(value);
+            }
             else if (key == "xreal_imu_address")
             {
                 values.xrealImuAddress = ParseString(value);

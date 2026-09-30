@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <numeric>
 #include <thread>
@@ -1080,7 +1081,16 @@ void Session::StartLocalDisplayIfNeeded()
     }
 
     const ConfigValues config = Config::Get().GetValues();
-    xrealImu_ = std::make_unique<XrealImu>(config.xrealImuAddress, config.xrealImuPitchOffsetDeg);
+    XrealImu::Options imuOptions;
+    imuOptions.pitchOffsetDeg = config.xrealImuPitchOffsetDeg;
+    imuOptions.magnetometer = config.xrealMagnetometer;
+    glm::vec3 magnetometerOffset;
+    if (std::sscanf(config.xrealMagnetometerOffset.c_str(), "%f , %f , %f", &magnetometerOffset.x,
+                    &magnetometerOffset.y, &magnetometerOffset.z) == 3)
+    {
+        imuOptions.magnetometerOffset = magnetometerOffset;
+    }
+    xrealImu_ = std::make_unique<XrealImu>(config.xrealImuAddress, imuOptions);
     xrealImu_->Start();
 
     LocalDisplay::Settings settings;

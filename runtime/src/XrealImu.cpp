@@ -25,6 +25,12 @@ constexpr uint8_t kSensorTag[6] = {0x00, 0x40, 0x1f, 0x00, 0x00, 0x40};
 
 constexpr float kGravity = 9.80665f;
 
+// Byte 30 says what a packet carries.
+constexpr size_t kKindOffset = 30;
+constexpr uint8_t kMagnetometerKind = 0x04;
+// Motion packets fill the magnetometer slots with this.
+constexpr float kNoMagnetometerReading = -3200.0f;
+
 // Maps raw sensor axes to OpenXR head axes (+X right, +Y up, -Z forward).
 // Determined on an XREAL One Pro by recording yaw-left (rotation about raw -Y),
 // pitch-up (raw +X) and right-ear-down roll while worn. The IMU also sits
@@ -37,6 +43,13 @@ const glm::mat3 kRawToHead =
               glm::vec3(0.0f, -1.0f, 0.0f),  // raw Y -> down
               glm::vec3(0.0f, 0.0f, -1.0f)); // raw Z -> forward
 
+// Maps magnetometer axes to raw gyro axes. Found by turning the glasses
+// through many orientations: this is the mapping under which the field stays
+// fixed in the world while the gyro says the glasses turn.
+const glm::mat3 kMagnetometerToRaw = glm::mat3(glm::vec3(0.0f, 0.0f, -1.0f),  // mag X -> raw -Z
+                                               glm::vec3(1.0f, 0.0f, 0.0f),   // mag Y -> raw X
+                                               glm::vec3(0.0f, -1.0f, 0.0f)); // mag Z -> raw -Y
+
 // Filter tuning.
 constexpr float kAccelGateMs2 = 1.0f;         // trust accel only when |a| is within this of g
 constexpr float kTiltGainStartup = 5.0f;      // fast tilt convergence while settling
@@ -47,6 +60,19 @@ constexpr float kStillMaxRate = 0.1f;         // rad/s, beyond this it is not bi
 constexpr uint32_t kStillSamplesRequired = 300;
 constexpr float kBiasRateStartup = 0.01f;
 constexpr float kBiasRate = 0.001f;
+// Magnetometer: a window of this long, turned at least this much, adds one
+// hard-iron equation; old ones fade, and the starting offset weighs as a few.
+constexpr uint64_t kMagWindowUs = 500000;
+constexpr float kMagWindowMinTurn = 0.1f;  // rad
+constexpr float kMagFade = 0.995f;
+constexpr float kMagPriorWeight = 0.05f;
+// Yaw is pulled toward the start heading at this rate (1/s), and the gyro's
+// yaw bias learned from what is left, from readings whose strength is within
+// kMagDisturbance of usual and not near vertical.
+constexpr float kHeadingGain = 0.3f;
+constexpr float kHeadingBiasGain = 0.02f;
+constexpr float kMagDisturbance = 0.2f;
+constexpr float kMagMinHorizontal = 0.2f;
 
 bool IsFinite(const glm::vec3& v)
 {
@@ -89,6 +115,17 @@ glm::quat RotationBetween(const glm::vec3& from, const glm::vec3& to)
     return glm::normalize(glm::quat(1.0f + d, c.x, c.y, c.z));
 }
 
+float WrapAngle(float angle)
+{
+    return std::remainder(angle, 2.0f * glm::pi<float>());
+}
+
+// Heading of a world vector, measured like YawOf: 0 toward -Z, positive left.
+float HeadingOf(const glm::vec3& v)
+{
+    return std::atan2(-v.x, -v.z);
+}
+
 float YawOf(const glm::quat& q)
 {
     const glm::vec3 forward = q * glm::vec3(0.0f, 0.0f, -1.0f);
@@ -98,10 +135,18 @@ float YawOf(const glm::quat& q)
 
 } // namespace
 
-XrealImu::XrealImu(std::string address, float pitchOffsetDeg)
-    : address_(std::move(address)),
-      mountCorrection_(glm::mat3_cast(glm::angleAxis(glm::radians(pitchOffsetDeg), glm::vec3(1.0f, 0.0f, 0.0f))))
+XrealImu::XrealImu(std::string address)
+    : XrealImu(std::move(address), Options{})
 {
+}
+
+XrealImu::XrealImu(std::string address, const Options& options)
+    : address_(std::move(address)),
+      options_(options),
+      mountCorrection_(glm::mat3_cast(glm::angleAxis(glm::radians(options.pitchOffsetDeg), glm::vec3(1.0f, 0.0f, 0.0f))))
+{
+    magOffsetPrior_ = mountCorrection_ * kRawToHead * kMagnetometerToRaw * options.magnetometerOffset;
+    magOffset_ = magOffsetPrior_;
 }
 
 XrealImu::~XrealImu()
@@ -132,6 +177,18 @@ bool XrealImu::TryParsePacket(const uint8_t* data, size_t size, Sample& sample)
     if (size < PacketSize || std::memcmp(data, kHeader, sizeof(kHeader)) != 0)
     {
         return false;
+    }
+    if (data[kKindOffset] == kMagnetometerKind)
+    {
+        const glm::vec3 raw(ReadF32(data + 58), ReadF32(data + 62), ReadF32(data + 66));
+        if (!IsFinite(raw) || raw.x == kNoMagnetometerReading || glm::length(raw) > 5000.0f)
+        {
+            return false;
+        }
+        sample.kind = Sample::Kind::Magnetometer;
+        sample.timestampUs = ReadU64(data + 14) / 1000;
+        sample.magnetometer = kRawToHead * kMagnetometerToRaw * raw;
+        return true;
     }
     const uint8_t* end = data + PacketSize;
     if (std::search(data, end, std::begin(kSensorTag), std::end(kSensorTag)) == end)
@@ -189,10 +246,23 @@ void XrealImu::ExtractSamples(std::vector<uint8_t>& buffer, std::vector<Sample>&
 
 void XrealImu::Integrate(const Sample& rawSample)
 {
-    const Sample sample = {rawSample.timestampUs, mountCorrection_ * rawSample.gyro,
-                           mountCorrection_ * rawSample.accel};
+    Sample sample = rawSample;
+    sample.gyro = mountCorrection_ * rawSample.gyro;
+    sample.accel = mountCorrection_ * rawSample.accel;
+    sample.magnetometer = mountCorrection_ * rawSample.magnetometer;
     std::scoped_lock lock(mutex_);
+    if (sample.kind == Sample::Kind::Magnetometer)
+    {
+        IntegrateMagnetometer(sample);
+    }
+    else
+    {
+        IntegrateMotion(sample);
+    }
+}
 
+void XrealImu::IntegrateMotion(const Sample& sample)
+{
     const float accelMagnitude = glm::length(sample.accel);
     const bool accelTrusted = std::abs(accelMagnitude - kGravity) < kAccelGateMs2;
 
@@ -235,6 +305,7 @@ void XrealImu::Integrate(const Sample& rawSample)
 
     glm::vec3 rate = sample.gyro - gyroBias_;
     angularVelocity_ = rate;
+    magWindowTurn_ = IntegrateRate(magWindowTurn_, rate, dt);
 
     // Tilt correction: steer the estimated up vector toward the measured one.
     if (accelTrusted)
@@ -245,6 +316,84 @@ void XrealImu::Integrate(const Sample& rawSample)
     }
 
     orientation_ = IntegrateRate(orientation_, rate, dt);
+}
+
+void XrealImu::IntegrateMagnetometer(const Sample& sample)
+{
+    if (!options_.magnetometer || !hasOrientation_)
+    {
+        return;
+    }
+    const float dt = static_cast<float>(sample.timestampUs - lastMagUs_) * 1e-6f;
+    lastMagUs_ = sample.timestampUs;
+
+    // Hard iron: over a window the head turned by `turn` (head axes), a fixed
+    // world field reads field_b = turn^T field_a, so with raw = field + offset,
+    // raw_b - turn^T raw_a = (I - turn^T) offset: one linear equation per window.
+    if (!magWindowStarted_)
+    {
+        magWindowStarted_ = true;
+        magWindowField_ = sample.magnetometer;
+        magWindowTurn_ = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        magWindowStartUs_ = sample.timestampUs;
+    }
+    else if (sample.timestampUs - magWindowStartUs_ >= kMagWindowUs)
+    {
+        const glm::quat turn = magWindowTurn_;
+        if (2.0f * std::atan2(glm::length(glm::vec3(turn.x, turn.y, turn.z)), std::abs(turn.w)) > kMagWindowMinTurn)
+        {
+            const glm::mat3 turnT = glm::transpose(glm::mat3_cast(turn));
+            const glm::mat3 m = glm::mat3(1.0f) - turnT;
+            const glm::vec3 y = sample.magnetometer - turnT * magWindowField_;
+            magNormal_ = magNormal_ * kMagFade + glm::transpose(m) * m;
+            magRhs_ = magRhs_ * kMagFade + glm::transpose(m) * y;
+            magOffset_ = glm::inverse(magNormal_ + glm::mat3(kMagPriorWeight)) *
+                         (magRhs_ + kMagPriorWeight * magOffsetPrior_);
+        }
+        magWindowField_ = sample.magnetometer;
+        magWindowTurn_ = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        magWindowStartUs_ = sample.timestampUs;
+    }
+
+    // Heading: hold yaw to where the field pointed at start, skipping readings
+    // a nearby magnet disturbs (strength off) or that say little about heading.
+    const glm::vec3 field = sample.magnetometer - magOffset_;
+    const float strength = glm::length(field);
+    magStrength_ = magStrength_ == 0.0f ? strength : magStrength_ + (strength - magStrength_) * 0.002f;
+    const glm::vec3 world = orientation_ * field;
+    if (std::abs(strength - magStrength_) > kMagDisturbance * magStrength_ ||
+        glm::length(glm::vec2(world.x, world.z)) < kMagMinHorizontal * strength)
+    {
+        return;
+    }
+    const float heading = HeadingOf(world);
+    // Signed: a magnetometer packet can be stamped a little before the newest motion one.
+    const bool settled = static_cast<float>(static_cast<int64_t>(sample.timestampUs - firstTimestampUs_)) * 1e-6f >=
+                         kStartupSeconds;
+    if (!hasMagHeading_)
+    {
+        if (settled)
+        {
+            magHeading_ = heading;
+            hasMagHeading_ = true;
+        }
+        return;
+    }
+    if (!(dt > 0.0f) || dt > 0.05f)
+    {
+        return;
+    }
+    // Heading too far left means the gyro reads left turns too high: turn back,
+    // and move its bias toward world up (in head axes).
+    const float error = WrapAngle(heading - magHeading_);
+    orientation_ = glm::normalize(glm::angleAxis(-error * kHeadingGain * dt, glm::vec3(0.0f, 1.0f, 0.0f)) * orientation_);
+    gyroBias_ += glm::inverse(orientation_) * glm::vec3(0.0f, error * kHeadingBiasGain * dt, 0.0f);
+}
+
+glm::vec3 XrealImu::GetMagnetometerOffset() const
+{
+    std::scoped_lock lock(mutex_);
+    return magOffset_;
 }
 
 bool XrealImu::HasOrientation() const

@@ -15,23 +15,43 @@
 // 3DoF head tracker for XREAL One / One Pro glasses.
 //
 // The glasses expose their IMU as a TCP stream on their USB network interface
-// (169.254.2.1:52998 by default). Packets are parsed the same way as the
-// xreal_one_driver crate, then gyro and accelerometer are fused (Mahony-style
-// complementary filter with at-rest gyro bias estimation) into a gravity-aligned
-// orientation in OpenXR axes: +X right, +Y up, -Z forward.
+// (169.254.2.1:52998 by default): motion packets (gyro and accelerometer,
+// 1 kHz) and magnetometer packets (400 Hz). Gyro and accelerometer are fused
+// (Mahony-style complementary filter with at-rest gyro bias estimation) into a
+// gravity-aligned orientation in OpenXR axes: +X right, +Y up, -Z forward. The
+// magnetometer holds yaw to the heading it had at start, so it does not drift;
+// its hard-iron offset is refined while the head turns.
 class XrealImu
 {
 public:
     struct Sample
     {
+        enum class Kind
+        {
+            Motion,
+            Magnetometer,
+        };
+
+        Kind kind = Kind::Motion;
         uint64_t timestampUs = 0;
-        glm::vec3 gyro = {};  // rad/s, head frame, OpenXR axes
-        glm::vec3 accel = {}; // m/s^2 specific force, head frame, OpenXR axes
+        glm::vec3 gyro = {};         // rad/s, head frame, OpenXR axes
+        glm::vec3 accel = {};        // m/s^2 specific force, head frame, OpenXR axes
+        glm::vec3 magnetometer = {}; // uT, head frame, before the hard-iron offset
     };
 
-    // pitchOffsetDeg fine-tunes the IMU-to-display pitch on top of the built-in
-    // calibration; positive values lower the rendered view.
-    explicit XrealImu(std::string address, float pitchOffsetDeg = 0.0f);
+    struct Options
+    {
+        // Fine-tunes the IMU-to-display pitch on top of the built-in
+        // calibration; positive values lower the rendered view.
+        float pitchOffsetDeg = 0.0f;
+        bool magnetometer = true;
+        // Starting hard-iron offset in the magnetometer's own axes (uT),
+        // measured on an XREAL One Pro; refined while the head turns.
+        glm::vec3 magnetometerOffset = {-152.4f, 125.4f, -87.3f};
+    };
+
+    explicit XrealImu(std::string address);
+    XrealImu(std::string address, const Options& options);
     ~XrealImu();
 
     XrealImu(const XrealImu&) = delete;
@@ -57,11 +77,17 @@ public:
     // Pure fusion step, exposed for tests.
     void Integrate(const Sample& sample);
 
+    // The current hard-iron estimate, head frame (uT). For tests.
+    glm::vec3 GetMagnetometerOffset() const;
+
 private:
     void Run();
     int Connect() const;
+    void IntegrateMotion(const Sample& sample);
+    void IntegrateMagnetometer(const Sample& sample);
 
     std::string address_;
+    Options options_;
     glm::mat3 mountCorrection_;
     std::atomic_bool running_{false};
     std::thread thread_;
@@ -76,4 +102,21 @@ private:
     uint64_t lastTimestampUs_ = 0;
     uint64_t firstTimestampUs_ = 0;
     uint32_t stillSampleCount_ = 0;
+
+    // Magnetometer: the hard-iron estimate and the normal equations behind it,
+    // the window it is being fitted over, and the heading yaw is held to.
+    glm::vec3 magOffset_ = {};
+    glm::vec3 magOffsetPrior_ = {};
+    glm::mat3 magNormal_ = glm::mat3(0.0f);
+    glm::vec3 magRhs_ = {};
+    bool magWindowStarted_ = false;
+    glm::vec3 magWindowField_ = {};
+    // The window's turn by the gyro alone: the fused orientation carries the
+    // magnetometer's own corrections, which would feed back into the fit.
+    glm::quat magWindowTurn_ = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    uint64_t magWindowStartUs_ = 0;
+    uint64_t lastMagUs_ = 0;
+    float magStrength_ = 0.0f;
+    bool hasMagHeading_ = false;
+    float magHeading_ = 0.0f;
 };

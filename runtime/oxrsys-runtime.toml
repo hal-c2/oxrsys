@@ -117,6 +117,13 @@ xreal_imu_address = "169.254.2.1:52998"
 # straight ahead. Positive lowers the view.
 xreal_imu_pitch_offset_deg = 0
 
+# Hold yaw with the glasses' magnetometer so the view does not drift sideways.
+xreal_magnetometer = true
+
+# Starting hard-iron offset ("x, y, z", uT, magnetometer axes); refined while
+# the head turns. Empty uses the value measured on an XREAL One Pro.
+xreal_magnetometer_offset = ""
+
 [logging]
 # Write server logs to the platform state directory.
 #   macOS: ~/Library/Application Support/OXRSys/oxrsys-runtime.log
