@@ -17,6 +17,8 @@ class Swapchain;
 class Space;
 class InputManager;
 class StreamingServer;
+class XrealImu;
+class LocalDisplay;
 
 class Session
 {
@@ -151,4 +153,12 @@ private:
     bool streamingStarted_ = false;
     void StartStreamingIfNeeded();
     void CheckStreamingConnection();
+
+    // Local display mode: present on an attached screen (XREAL glasses) with head
+    // tracking from the glasses' IMU, instead of streaming to a headset client.
+    std::unique_ptr<XrealImu> xrealImu_;
+    std::unique_ptr<LocalDisplay> localDisplay_;
+    float localWarpPredictionSeconds_ = 0.0f;
+    void StartLocalDisplayIfNeeded();
+    void StopLocalDisplay();
 };

@@ -21,6 +21,7 @@ The runtime operates in two modes:
 
 - `Simulator`: local keyboard and mouse input, local debug rendering, no headset required.
 - `Streaming`: a headset client connects, sends tracking, and receives encoded frames.
+- `Local display` (macOS, opt-in via `local_display_enabled`): frames are presented on an attached screen such as XREAL glasses, with head tracking from the glasses' IMU and present-time rotational reprojection. The streaming server is not started. See [XREAL Local Display](platforms/xreal.md).
 
 The simulator is useful for API validation and local debugging. Streaming is the path used for Quest-class headsets and future remote clients.
 

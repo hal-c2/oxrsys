@@ -43,6 +43,22 @@ struct ConfigValues
     // is miscalibrated so a standing player stands at the wrong height in-game.
     float stageHeightOffsetM = 0.0f;
 
+    // Local display mode: render to an attached screen (XREAL One / One Pro in
+    // side-by-side 3D mode) with head tracking from the glasses' IMU, instead of
+    // streaming to a headset client. Defaults describe the One Pro optics.
+    bool localDisplayEnabled = false;
+    std::string localDisplayScreen = "XREAL"; // substring of the macOS screen name
+    uint32_t localDisplayEyeWidth = 1920;
+    uint32_t localDisplayEyeHeight = 1080;
+    float localDisplayFovHorizontalDeg = 50.6f;
+    float localDisplayFovVerticalDeg = 29.8f;
+    float localDisplayIpdMm = 63.0f;
+    bool localDisplayTimewarp = true;
+    float localDisplayRenderPredictionMs = 16.0f; // head pose prediction for rendering
+    float localDisplayWarpPredictionMs = 8.0f;    // head pose prediction at present time
+    std::string xrealImuAddress = "169.254.2.1:52998";
+    float xrealImuPitchOffsetDeg = 0.0f;
+
     bool fileLogging = true;        // Write logs to oxrsys-runtime.log
     bool questLogcat = false;       // Capture Quest logcat to oxrsys-headset.log
 };

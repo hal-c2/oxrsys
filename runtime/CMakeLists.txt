@@ -17,17 +17,20 @@ set(OXRSYS_RUNTIME_SOURCES
     src/StreamingServer.cpp
     src/TrackingReceiver.cpp
     src/VulkanDispatch.cpp
+    src/XrealImu.cpp
 )
 
 if(APPLE)
     list(APPEND OXRSYS_RUNTIME_SOURCES
         src/Swapchain.mm
         src/VideoEncoder.mm
+        src/LocalDisplay.mm
     )
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND OXRSYS_RUNTIME_SOURCES
         src/SwapchainVulkan.cpp
         src/FfmpegVideoEncoder.cpp
+        src/LocalDisplayStub.cpp
     )
 else()
     message(FATAL_ERROR

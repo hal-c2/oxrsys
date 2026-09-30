@@ -174,13 +174,16 @@ XrResult Instance::EnumerateViewConfigurationViews(XrSystemId systemId,
         return XR_ERROR_SIZE_INSUFFICIENT;
     }
 
+    const ConfigValues config = Config::Get().GetValues();
+    const uint32_t eyeWidth = config.localDisplayEnabled ? config.localDisplayEyeWidth : EyeWidth;
+    const uint32_t eyeHeight = config.localDisplayEnabled ? config.localDisplayEyeHeight : EyeHeight;
     for (uint32_t i = 0; i < 2; i++)
     {
         views[i].type = XR_TYPE_VIEW_CONFIGURATION_VIEW;
         views[i].next = nullptr;
-        views[i].recommendedImageRectWidth = EyeWidth;
+        views[i].recommendedImageRectWidth = eyeWidth;
         views[i].maxImageRectWidth = 4096;
-        views[i].recommendedImageRectHeight = EyeHeight;
+        views[i].recommendedImageRectHeight = eyeHeight;
         views[i].maxImageRectHeight = 4096;
         views[i].recommendedSwapchainSampleCount = 1;
         views[i].maxSwapchainSampleCount = 1;

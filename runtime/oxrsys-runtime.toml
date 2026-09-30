@@ -80,6 +80,38 @@ anchors = false
 scene = false
 persistence = false
 
+[local_display]
+# Present on a screen attached to this Mac instead of streaming to a headset,
+# with 3DoF head tracking from XREAL One / One Pro glasses over their USB network
+# interface. Put the glasses in 3D (side-by-side) mode for stereo; otherwise the
+# left eye is shown alone. Defaults below describe the XREAL One Pro.
+local_display_enabled = false
+
+# Substring of the macOS display name to present on. If no screen matches, a
+# preview window opens on the main screen instead.
+local_display_screen = "XREAL"
+
+# Recommended per-eye render size and symmetric per-eye field of view.
+local_display_eye_width = 1920
+local_display_eye_height = 1080
+local_display_fov_h_deg = 50.6
+local_display_fov_v_deg = 29.8
+local_display_ipd_mm = 63.0
+
+# Rotation-only reprojection at present time using the newest IMU pose.
+local_display_timewarp = true
+
+# Head pose prediction (milliseconds) for rendering and for the present-time warp.
+local_display_render_prediction_ms = 16
+local_display_warp_prediction_ms = 8
+
+# IMU endpoint exposed by the glasses.
+xreal_imu_address = "169.254.2.1:52998"
+
+# Pitch fine-tuning (degrees) if the horizon sits too high or low when looking
+# straight ahead. Positive lowers the view.
+xreal_imu_pitch_offset_deg = 0
+
 [logging]
 # Write server logs to the platform state directory.
 #   macOS: ~/Library/Application Support/OXRSys/oxrsys-runtime.log

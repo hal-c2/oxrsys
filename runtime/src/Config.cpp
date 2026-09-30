@@ -354,6 +354,66 @@ ConfigValues ParseConfigToml(std::istream& input, const ConfigValues& defaults)
                     values.dynamicResolutionMinScale = val;
                 }
             }
+            else if (key == "local_display_enabled")
+            {
+                values.localDisplayEnabled = ParseBool(value);
+            }
+            else if (key == "local_display_screen")
+            {
+                values.localDisplayScreen = ParseString(value);
+            }
+            else if (key == "local_display_eye_width" || key == "local_display_eye_height")
+            {
+                int val = std::stoi(value);
+                if (val >= 256 && val <= 4096)
+                {
+                    (key == "local_display_eye_width" ? values.localDisplayEyeWidth
+                                                      : values.localDisplayEyeHeight) =
+                        static_cast<uint32_t>(val);
+                }
+            }
+            else if (key == "local_display_fov_h_deg" || key == "local_display_fov_v_deg")
+            {
+                float val = std::stof(value);
+                if (val >= 10.0f && val <= 170.0f)
+                {
+                    (key == "local_display_fov_h_deg" ? values.localDisplayFovHorizontalDeg
+                                                      : values.localDisplayFovVerticalDeg) = val;
+                }
+            }
+            else if (key == "local_display_ipd_mm")
+            {
+                float val = std::stof(value);
+                if (val >= 40.0f && val <= 90.0f)
+                {
+                    values.localDisplayIpdMm = val;
+                }
+            }
+            else if (key == "local_display_timewarp")
+            {
+                values.localDisplayTimewarp = ParseBool(value);
+            }
+            else if (key == "local_display_render_prediction_ms" || key == "local_display_warp_prediction_ms")
+            {
+                float val = std::stof(value);
+                if (val >= 0.0f && val <= 100.0f)
+                {
+                    (key == "local_display_render_prediction_ms" ? values.localDisplayRenderPredictionMs
+                                                                 : values.localDisplayWarpPredictionMs) = val;
+                }
+            }
+            else if (key == "xreal_imu_pitch_offset_deg")
+            {
+                float val = std::stof(value);
+                if (val >= -45.0f && val <= 45.0f)
+                {
+                    values.xrealImuPitchOffsetDeg = val;
+                }
+            }
+            else if (key == "xreal_imu_address")
+            {
+                values.xrealImuAddress = ParseString(value);
+            }
             else if (key == "stage_height_offset_m")
             {
                 float val = std::stof(value);

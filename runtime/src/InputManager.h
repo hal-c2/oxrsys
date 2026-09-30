@@ -13,6 +13,7 @@
 #include <oxrsys/protocol/Protocol.h>
 
 class TrackingReceiver;
+class XrealImu;
 
 class InputManager
 {
@@ -40,6 +41,13 @@ public:
     // Set the tracking receiver to read poses from (streaming client)
     void SetTrackingReceiver(TrackingReceiver* receiver);
     bool IsStreaming() const { return trackingReceiver_ != nullptr; }
+
+    // Read head orientation from a local IMU (XREAL glasses) instead of a streaming
+    // client. Eye FOV is symmetric, given as full horizontal/vertical angles in degrees.
+    // Pass nullptr to detach.
+    void SetLocalHeadTracker(const XrealImu* imu, float predictionSeconds, float ipd,
+                             float fovHorizontalDeg, float fovVerticalDeg);
+    void GetLocalEyeFov(XrFovf fov[2]) const;
 
     // Per-frame update
     void Update(float deltaTime);
@@ -126,6 +134,11 @@ private:
     float GetTrackedGraspValue(Hand hand) const;
 
     TrackingReceiver* trackingReceiver_ = nullptr;
+
+    const XrealImu* localImu_ = nullptr;
+    float localPredictionSeconds_ = 0.0f;
+    float localIpd_ = 0.0f;
+    XrFovf localFov_ = {};
 
     // Head state (quaternion from streaming client)
     // LOCAL reference space anchor, captured from the first streamed head pose

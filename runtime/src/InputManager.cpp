@@ -4,9 +4,11 @@
 #include "Config.h"
 #include "Instance.h"
 #include "TrackingReceiver.h"
+#include "XrealImu.h"
 #include <glm/gtc/quaternion.hpp>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <initializer_list>
 #include <spdlog/spdlog.h>
@@ -193,7 +195,33 @@ void InputManager::SetStreamingClientName(const std::string& clientName)
 
 glm::quat InputManager::GetHeadRotation() const
 {
+    // Sample the local IMU at call time so xrLocateViews gets the freshest pose.
+    if (localImu_ != nullptr && localImu_->HasOrientation())
+    {
+        return localImu_->GetOrientation(localPredictionSeconds_);
+    }
     return headQuat_;
+}
+
+void InputManager::SetLocalHeadTracker(const XrealImu* imu, float predictionSeconds, float ipd,
+                                       float fovHorizontalDeg, float fovVerticalDeg)
+{
+    localImu_ = imu;
+    localPredictionSeconds_ = predictionSeconds;
+    localIpd_ = ipd;
+    const float halfH = glm::radians(fovHorizontalDeg) * 0.5f;
+    const float halfV = glm::radians(fovVerticalDeg) * 0.5f;
+    localFov_ = {-halfH, halfH, halfV, -halfV};
+    if (imu == nullptr)
+    {
+        localReferenceCaptured_ = false;
+    }
+}
+
+void InputManager::GetLocalEyeFov(XrFovf fov[2]) const
+{
+    fov[0] = localFov_;
+    fov[1] = localFov_;
 }
 
 void InputManager::Update(float deltaTime)
@@ -202,6 +230,28 @@ void InputManager::Update(float deltaTime)
     if (trackingReceiver_ != nullptr && trackingReceiver_->IsReceiving())
     {
         UpdateFromStreaming();
+    }
+    else if (localImu_ != nullptr && localImu_->HasOrientation())
+    {
+        headQuat_ = localImu_->GetOrientation(localPredictionSeconds_);
+        if (!localReferenceCaptured_)
+        {
+            RecenterLocalReference();
+            localReferenceCaptured_ = true;
+        }
+
+        static auto lastPoseLog = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastPoseLog >= std::chrono::seconds(1))
+        {
+            lastPoseLog = now;
+            const glm::vec3 forward = headQuat_ * glm::vec3(0.0f, 0.0f, -1.0f);
+            const glm::vec3 right = headQuat_ * glm::vec3(1.0f, 0.0f, 0.0f);
+            spdlog::debug("InputManager: local head yaw={:.1f} pitch={:.1f} roll={:.1f} deg",
+                         glm::degrees(std::atan2(-forward.x, -forward.z)),
+                         glm::degrees(std::asin(std::clamp(forward.y, -1.0f, 1.0f))),
+                         glm::degrees(std::asin(std::clamp(right.y, -1.0f, 1.0f))));
+        }
     }
 }
 
@@ -441,7 +491,7 @@ void InputManager::GetEyeViews(XrView* views, uint32_t viewCount) const
     glm::vec3 right = rot * glm::vec3(1.0f, 0.0f, 0.0f);
     float ipd = (IsStreaming() && streamingIpd_ > 0.0f)
         ? streamingIpd_
-        : DefaultIpd;
+        : (localImu_ != nullptr && localIpd_ > 0.0f) ? localIpd_ : DefaultIpd;
     float halfIpd = ipd * 0.5f;
 
     bool hasStreamingFov = IsStreaming() &&
@@ -467,7 +517,11 @@ void InputManager::GetEyeViews(XrView* views, uint32_t viewCount) const
         // Legacy fallback for clients that do not send TrackingPacket.eyeFov.
         // fov_degrees is the vertical FOV; horizontal FOV is derived from the
         // texture aspect ratio so angular pixels are square.
-        if (hasStreamingFov)
+        if (localImu_ != nullptr && !hasStreamingFov)
+        {
+            views[i].fov = localFov_;
+        }
+        else if (hasStreamingFov)
         {
             if (i == 0)
             {

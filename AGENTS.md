@@ -116,6 +116,7 @@ Avoid duplicating the same guidance in multiple files. If commands, platform sta
 - Streaming controller poses are valid only when `TRACKING_FLAG_LEFT_CONTROLLER_ACTIVE` or `TRACKING_FLAG_RIGHT_CONTROLLER_ACTIVE` is present; missing controller flags must not overwrite the last valid runtime pose.
 - The action system is profile-aware and must not regress to hard-forcing `KHR simple_controller`.
 - `xrLocateSpacesKHR` is accepted as an alias of the OpenXR 1.1 `xrLocateSpaces` entry point.
+- Local display mode (`local_display_enabled`, macOS only) replaces the streaming server: `LocalDisplay` presents `FrameSource` eyes into a CAMetalLayer window on the matching screen (created asynchronously on the main thread; never block the frame loop on AppKit), and `XrealImu` supplies 3DoF head orientation to `InputManager`. See `docs/platforms/xreal.md`.
 - Reference spaces currently enumerate `VIEW`, `LOCAL`, `LOCAL_FLOOR`, and `STAGE`.
 - Runtime configuration is loaded from the platform config directory:
   macOS `~/Library/Application Support/OXRSys/oxrsys-runtime.toml`,

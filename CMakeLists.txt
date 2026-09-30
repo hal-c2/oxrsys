@@ -159,6 +159,7 @@ add_executable(oxrsys_runtime_tests
     tests/TestProtocolLayout.cpp
     tests/TestQuestPassthroughAlphaPolicy.cpp
     tests/TestQuestShellInteraction.cpp
+    tests/TestXrealImu.cpp
     clients/Android/android-vr/app/src/main/cpp/QuestPassthroughAlphaPolicy.cpp
     clients/Android/android-vr/app/src/main/cpp/QuestShellInteraction.cpp
     runtime/src/InputManager.cpp
@@ -168,6 +169,7 @@ add_executable(oxrsys_runtime_tests
     runtime/src/RuntimeSockets.cpp
     runtime/src/StreamingFrameQueue.cpp
     runtime/src/VulkanDispatch.cpp
+    runtime/src/XrealImu.cpp
 )
 target_include_directories(oxrsys_runtime_tests PRIVATE
     runtime/src

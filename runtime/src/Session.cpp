@@ -8,6 +8,8 @@
 #include "Space.h"
 #include "InputManager.h"
 #include "StreamingServer.h"
+#include "LocalDisplay.h"
+#include "XrealImu.h"
 #include "Config.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -239,8 +241,15 @@ XrResult Session::BeginSession(const XrSessionBeginInfo* beginInfo)
 
     running_ = true;
 
-    // Start streaming server (broadcasts on LAN, waits for headset connection)
-    StartStreamingIfNeeded();
+    if (Config::Get().GetValues().localDisplayEnabled)
+    {
+        StartLocalDisplayIfNeeded();
+    }
+    else
+    {
+        // Start streaming server (broadcasts on LAN, waits for headset connection)
+        StartStreamingIfNeeded();
+    }
 
     spdlog::info("OXRSys: Session begun");
     return XR_SUCCESS;
@@ -264,6 +273,7 @@ XrResult Session::EndSession()
         inputManager_->SetTrackingReceiver(nullptr);
         spdlog::info("OXRSys: Streaming server stopped for session end");
     }
+    StopLocalDisplay();
 
     {
         std::scoped_lock lock(frameStateMutex_);
@@ -313,6 +323,7 @@ void Session::Shutdown()
         streamingServer_.reset();
         streamingStarted_ = false;
     }
+    StopLocalDisplay();
 
     spaces_.clear();
     swapchains_.clear();
@@ -406,6 +417,10 @@ XrResult Session::WaitFrame(const XrFrameWaitInfo* frameWaitInfo, XrFrameState* 
     if (streamingServer_)
     {
         targetRefreshHz = std::max(streamingServer_->GetTargetRefreshRateHz(), 1u);
+    }
+    else if (localDisplay_ && localDisplay_->GetRefreshRateHz() > 0)
+    {
+        targetRefreshHz = localDisplay_->GetRefreshRateHz();
     }
 
     // Frame pacing: self-correcting absolute-deadline grid at the negotiated display
@@ -625,6 +640,16 @@ XrResult Session::EndFrame(const XrFrameEndInfo* frameEndInfo)
         {
             spdlog::info("OXRSys: using projection layer source-alpha flags for passthrough streaming");
         }
+    }
+
+    if (localDisplay_ && xrealImu_)
+    {
+        XrFovf fov[2];
+        inputManager_->GetLocalEyeFov(fov);
+        const XrQuaternionf& rendered = lastRenderHeadPose_.orientation;
+        localDisplay_->Present(std::move(frameSource), fov,
+                               glm::quat(rendered.w, rendered.x, rendered.y, rendered.z),
+                               xrealImu_->GetOrientation(localWarpPredictionSeconds_));
     }
 
     // Send to connected headset client if streaming
@@ -1038,6 +1063,51 @@ void Session::StartStreamingIfNeeded()
     {
         spdlog::warn("OXRSys: Failed to start streaming server (non-fatal, simulator mode only)");
         streamingServer_.reset();
+    }
+}
+
+void Session::StartLocalDisplayIfNeeded()
+{
+    if (localDisplay_)
+    {
+        return;
+    }
+    if (graphicsContext_.metalDevice == nullptr)
+    {
+        spdlog::error("OXRSys: local display mode needs a Metal device; falling back to streaming");
+        StartStreamingIfNeeded();
+        return;
+    }
+
+    const ConfigValues config = Config::Get().GetValues();
+    xrealImu_ = std::make_unique<XrealImu>(config.xrealImuAddress, config.xrealImuPitchOffsetDeg);
+    xrealImu_->Start();
+
+    LocalDisplay::Settings settings;
+    settings.screenName = config.localDisplayScreen;
+    settings.timewarp = config.localDisplayTimewarp;
+    localDisplay_ = std::make_unique<LocalDisplay>(graphicsContext_.metalDevice, settings);
+    localWarpPredictionSeconds_ = config.localDisplayWarpPredictionMs * 0.001f;
+
+    inputManager_->SetLocalHeadTracker(xrealImu_.get(), config.localDisplayRenderPredictionMs * 0.001f,
+                                       config.localDisplayIpdMm * 0.001f,
+                                       config.localDisplayFovHorizontalDeg, config.localDisplayFovVerticalDeg);
+    spdlog::info("OXRSys: local display mode (screen '{}', IMU {}, FOV {:.1f}x{:.1f} deg, timewarp={})",
+                 settings.screenName, config.xrealImuAddress, config.localDisplayFovHorizontalDeg,
+                 config.localDisplayFovVerticalDeg, settings.timewarp);
+}
+
+void Session::StopLocalDisplay()
+{
+    if (inputManager_)
+    {
+        inputManager_->SetLocalHeadTracker(nullptr, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+    localDisplay_.reset();
+    if (xrealImu_)
+    {
+        xrealImu_->Stop();
+        xrealImu_.reset();
     }
 }
 
