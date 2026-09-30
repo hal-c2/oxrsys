@@ -231,9 +231,14 @@ void InputManager::Update(float deltaTime)
     {
         UpdateFromStreaming();
     }
-    else if (localImu_ != nullptr && localImu_->HasOrientation())
+    else if (localImu_ != nullptr)
     {
-        headQuat_ = localImu_->GetOrientation(localPredictionSeconds_);
+        // LOCAL is anchored at the head from the first frame, before (or
+        // without) IMU data, so content placed at LOCAL eye height is visible.
+        if (localImu_->HasOrientation())
+        {
+            headQuat_ = localImu_->GetOrientation(localPredictionSeconds_);
+        }
         if (!localReferenceCaptured_)
         {
             RecenterLocalReference();
